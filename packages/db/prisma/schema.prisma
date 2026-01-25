@@ -1,0 +1,850 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
+}
+
+// ===========================================
+// Authentication & Users
+// ===========================================
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+enum UserRole {
+  PLATFORM_ADMIN
+  RECRUITER
+  COMPANY_ADMIN
+  COMPANY_USER
+  CANDIDATE
+}
+
+enum RecruiterStatus {
+  PENDING_ONBOARDING
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+model User {
+  id                    String          @id @default(cuid())
+  email                 String          @unique
+  emailVerified         DateTime?
+  name                  String?
+  image                 String?
+  role                  UserRole        @default(CANDIDATE)
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  accounts              Account[]
+  sessions              Session[]
+  recruiterProfile      RecruiterProfile?
+  companyMembership     CompanyMember?
+  candidateProfile      CandidateProfile?
+  adminActions          AdminAction[]
+  auditLogs             AuditLog[]
+
+  @@index([email])
+  @@index([role])
+}
+
+// ===========================================
+// Recruiter System
+// ===========================================
+
+model RecruiterProfile {
+  id                    String           @id @default(cuid())
+  userId                String           @unique
+  user                  User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status                RecruiterStatus  @default(PENDING_ONBOARDING)
+
+  // Onboarding fields
+  fullName              String?
+  phone                 String?
+  linkedinUrl           String?
+  location              String?
+  timezone              String?
+  experienceYears       Int?
+  specializations       String[]         @default([])
+  cryptoExperience      Boolean          @default(false)
+  cryptoSpecializations String[]         @default([])
+  bio                   String?          @db.Text
+
+  // Stripe Connect
+  stripeConnectId       String?
+  stripeConnectOnboarded Boolean         @default(false)
+
+  // Verification
+  phoneVerifiedAt       DateTime?
+  identityVerifiedAt    DateTime?
+
+  // Approval
+  approvedAt            DateTime?
+  approvedBy            String?
+  rejectedAt            DateTime?
+  rejectedBy            String?
+  rejectionReason       String?          @db.Text
+
+  // Fraud flags
+  fraudScore            Float?
+  fraudFlags            Json?
+
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  roleAccesses          RoleAccess[]
+  submissions           CandidateSubmission[]
+  commissions           Commission[]
+
+  @@index([status])
+  @@index([stripeConnectId])
+}
+
+// ===========================================
+// Company System
+// ===========================================
+
+model Company {
+  id                    String          @id @default(cuid())
+  name                  String
+  website               String?
+  logoUrl               String?
+  description           String?         @db.Text
+  industry              String?
+  size                  String?
+  location              String?
+
+  // Billing
+  stripeCustomerId      String?
+  billingEmail          String?
+
+  // Platform settings
+  takeRateOverride      Float?          // Override platform default take rate
+
+  // Status
+  isActive              Boolean         @default(true)
+  verifiedAt            DateTime?
+
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  members               CompanyMember[]
+  roles                 Role[]
+  invoices              Invoice[]
+
+  @@index([stripeCustomerId])
+}
+
+model CompanyMember {
+  id                    String          @id @default(cuid())
+  userId                String          @unique
+  user                  User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyId             String
+  company               Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  role                  CompanyMemberRole @default(USER)
+
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  @@index([companyId])
+}
+
+enum CompanyMemberRole {
+  ADMIN
+  USER
+}
+
+// ===========================================
+// Role System
+// ===========================================
+
+enum RoleStatus {
+  DRAFT
+  LIVE
+  PAUSED
+  FILLED
+  CANCELLED
+}
+
+enum RoleAccessModel {
+  OPEN           // All approved recruiters can access
+  REQUEST        // Recruiters must request access
+  INVITE_ONLY    // Only invited recruiters
+}
+
+model Role {
+  id                    String          @id @default(cuid())
+  companyId             String
+  company               Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  // Basic info
+  title                 String
+  description           String          @db.Text
+  requirements          String          @db.Text
+  responsibilities      String?         @db.Text
+  location              String
+  locationType          LocationType    @default(REMOTE)
+  salary                String?
+  salaryMin             Int?
+  salaryMax             Int?
+  salaryCurrency        String          @default("USD")
+
+  // Commission
+  commissionType        CommissionType  @default(PERCENTAGE)
+  commissionValue       Float           // Percentage or fixed amount
+  commissionCurrency    String          @default("USD")
+
+  // Take rate override (optional, overrides company and platform default)
+  takeRateOverride      Float?
+
+  // Status & visibility
+  status                RoleStatus      @default(DRAFT)
+  accessModel           RoleAccessModel @default(REQUEST)
+
+  // AI screening questions
+  screeningQuestions    Json?           // Array of questions
+
+  // Embeddings for matching
+  embedding             Unsupported("vector(1536)")?
+
+  // Crypto-specific tags
+  cryptoTags            String[]        @default([])
+  techStack             String[]        @default([])
+  experienceLevel       String?
+
+  // Timestamps
+  publishedAt           DateTime?
+  closedAt              DateTime?
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  accesses              RoleAccess[]
+  submissions           CandidateSubmission[]
+  roleFitArchetype      RoleFitArchetype?
+
+  @@index([companyId])
+  @@index([status])
+  @@index([accessModel])
+}
+
+enum LocationType {
+  REMOTE
+  HYBRID
+  ONSITE
+}
+
+enum CommissionType {
+  PERCENTAGE   // Percentage of first year salary
+  FIXED        // Fixed amount
+}
+
+// ===========================================
+// Role Access Control
+// ===========================================
+
+enum RoleAccessStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  REVOKED
+}
+
+model RoleAccess {
+  id                    String          @id @default(cuid())
+  roleId                String
+  role                  Role            @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  recruiterId           String
+  recruiter             RecruiterProfile @relation(fields: [recruiterId], references: [id], onDelete: Cascade)
+
+  status                RoleAccessStatus @default(PENDING)
+  requestedAt           DateTime        @default(now())
+  respondedAt           DateTime?
+  respondedBy           String?
+
+  @@unique([roleId, recruiterId])
+  @@index([recruiterId])
+  @@index([status])
+}
+
+// ===========================================
+// Candidate Submissions (Recruiter-submitted)
+// ===========================================
+
+enum SubmissionStatus {
+  SUBMITTED
+  SCREENING
+  INTERVIEWING
+  OFFER
+  HIRED
+  STARTED
+  REJECTED
+  WITHDRAWN
+}
+
+model CandidateSubmission {
+  id                    String          @id @default(cuid())
+  roleId                String
+  role                  Role            @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  recruiterId           String
+  recruiter             RecruiterProfile @relation(fields: [recruiterId], references: [id], onDelete: Cascade)
+
+  // Candidate info (can be linked to CandidateProfile if exists)
+  candidateProfileId    String?
+  candidateProfile      CandidateProfile? @relation(fields: [candidateProfileId], references: [id])
+
+  // Basic candidate data (for unlinked submissions)
+  candidateName         String
+  candidateEmail        String
+  candidatePhone        String?
+  candidateLinkedin     String?
+  candidateGithub       String?
+  resumeUrl             String
+  resumeText            String?         @db.Text
+
+  // Recruiter notes
+  coverNote             String?         @db.Text
+
+  // Screening answers
+  screeningAnswers      Json?
+
+  // Attestations
+  candidateConsent      Boolean         @default(false)
+  consentTimestamp      DateTime?
+  recruiterAttestation  Boolean         @default(false)
+  attestationTimestamp  DateTime?
+
+  // Status
+  status                SubmissionStatus @default(SUBMITTED)
+  statusHistory         Json?
+
+  // Interview verification
+  interviewVerifiedAt   DateTime?
+  interviewVerifiedBy   String?
+
+  // Hire details
+  startDate             DateTime?
+  startSalary           Float?
+
+  // AI Summary
+  aiSummary             String?         @db.Text
+  aiSummaryGeneratedAt  DateTime?
+
+  // Embeddings
+  embedding             Unsupported("vector(1536)")?
+
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  scoring               CandidateScoring?
+  commission            Commission?
+
+  @@index([roleId])
+  @@index([recruiterId])
+  @@index([status])
+  @@index([candidateEmail])
+}
+
+// ===========================================
+// Candidate Talent Community
+// ===========================================
+
+enum CandidateProfileStatus {
+  INCOMPLETE
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum AvailabilityType {
+  IMMEDIATE
+  TWO_WEEKS
+  THIRTY_DAYS
+  SIXTY_DAYS
+  NOT_LOOKING
+}
+
+model CandidateProfile {
+  id                       String                @id @default(cuid())
+  userId                   String                @unique
+  user                     User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  status                   CandidateProfileStatus @default(INCOMPLETE)
+
+  // Basic info
+  fullName                 String?
+  location                 String?
+  timezone                 String?
+  phone                    String?
+
+  // Career preferences
+  desiredRoleTitles        String[]              @default([])
+  experienceLevel          String?
+  availability             AvailabilityType      @default(NOT_LOOKING)
+  remotePreference         String?               // "remote", "hybrid", "onsite", "flexible"
+  salaryExpectation        String?
+
+  // Crypto interests
+  cryptoInterests          String[]              @default([])
+
+  // Links
+  linkedinUrl              String?
+  githubUrl                String?
+  twitterUrl               String?
+  websiteUrl               String?
+
+  // Resume
+  resumeUrl                String?
+  resumeTextSnapshot       String?               @db.Text
+
+  // Optional pasted content
+  linkedinAboutPaste       String?               @db.Text
+  tweetSamplesPaste        String?               @db.Text
+
+  // Embeddings
+  embedding                Unsupported("vector(1536)")?
+
+  // Consents
+  consentToProcess         Boolean               @default(false)
+  consentToProcessAt       DateTime?
+  consentToAnalyzeFootprint Boolean              @default(false)
+  consentToAnalyzeGithub   Boolean               @default(false)
+  consentToBeContacted     Boolean               @default(false)
+
+  // Discoverability
+  discoverable             Boolean               @default(false)
+
+  // Profile completeness
+  completenessScore        Int                   @default(0)
+
+  createdAt                DateTime              @default(now())
+  updatedAt                DateTime              @updatedAt
+
+  submissions              CandidateSubmission[]
+  assessmentRuns           CandidateAssessmentRun[]
+  employabilityPlans       CandidateEmployabilityPlan[]
+  roleFitAssessments       CandidateRoleFitAssessment[]
+  cryptoScores             CandidateCryptoScore[]
+  techScores               CandidateTechScore[]
+  verification             CandidateVerification?
+
+  @@index([status])
+  @@index([discoverable])
+}
+
+// ===========================================
+// Candidate Verification
+// ===========================================
+
+model CandidateVerification {
+  id                    String          @id @default(cuid())
+  candidateId           String          @unique
+  candidate             CandidateProfile @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  emailVerifiedAt       DateTime?
+  phoneVerifiedAt       DateTime?
+
+  // GitHub proof verification
+  githubProofCode       String?
+  githubProofVerifiedAt DateTime?
+
+  // Other verification methods
+  linkedinVerifiedAt    DateTime?
+  twitterVerifiedAt     DateTime?
+
+  methodUsed            String?
+
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+}
+
+// ===========================================
+// Candidate Assessments
+// ===========================================
+
+enum AssessmentRunStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+model CandidateAssessmentRun {
+  id                    String              @id @default(cuid())
+  candidateId           String
+  candidate             CandidateProfile    @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  triggeredBy           String              // "candidate", "admin", "system"
+  status                AssessmentRunStatus @default(QUEUED)
+
+  // What was assessed
+  inputHash             String?             // Hash of inputs for caching
+  assessmentTypes       String[]            @default([])
+
+  // Provider info
+  provider              String?
+  model                 String?
+
+  // Timing
+  createdAt             DateTime            @default(now())
+  startedAt             DateTime?
+  completedAt           DateTime?
+
+  // Error tracking
+  error                 String?             @db.Text
+
+  employabilityPlan     CandidateEmployabilityPlan?
+  roleFitAssessments    CandidateRoleFitAssessment[]
+  cryptoScore           CandidateCryptoScore?
+  techScore             CandidateTechScore?
+
+  @@index([candidateId])
+  @@index([status])
+}
+
+model CandidateEmployabilityPlan {
+  id                    String              @id @default(cuid())
+  candidateId           String
+  candidate             CandidateProfile    @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  runId                 String              @unique
+  run                   CandidateAssessmentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  planJson              Json                // Full structured plan
+
+  createdAt             DateTime            @default(now())
+
+  @@index([candidateId])
+}
+
+model CandidateRoleFitAssessment {
+  id                    String              @id @default(cuid())
+  candidateId           String
+  candidate             CandidateProfile    @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  runId                 String
+  run                   CandidateAssessmentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  desiredRoleTitle      String
+  fitScore              Int                 // 0-100
+  reasonsJson           Json                // { whyFit, missingSkills, recommendedNextSteps }
+
+  createdAt             DateTime            @default(now())
+
+  @@index([candidateId])
+  @@index([desiredRoleTitle])
+}
+
+model CandidateCryptoScore {
+  id                    String              @id @default(cuid())
+  candidateId           String
+  candidate             CandidateProfile    @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  runId                 String              @unique
+  run                   CandidateAssessmentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  cryptoNativeScore     Int                 // 0-100
+  rationale             String              @db.Text
+  confidence            Float               // 0-1
+  flags                 Json?               // Any flags or warnings
+
+  createdAt             DateTime            @default(now())
+
+  @@index([candidateId])
+}
+
+model CandidateTechScore {
+  id                    String              @id @default(cuid())
+  candidateId           String
+  candidate             CandidateProfile    @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  runId                 String              @unique
+  run                   CandidateAssessmentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  scoresJson            Json                // { skill: score, ... }
+  overallScore          Int                 // 0-100
+  githubUsername        String?
+  reposAnalyzed         Int                 @default(0)
+
+  createdAt             DateTime            @default(now())
+
+  @@index([candidateId])
+}
+
+// ===========================================
+// Role Fit Archetypes (for matching)
+// ===========================================
+
+model RoleFitArchetype {
+  id                    String          @id @default(cuid())
+  roleId                String?         @unique
+  role                  Role?           @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  // Generic archetypes (not tied to specific role)
+  archetypeName         String?         // e.g., "Solidity Engineer", "DeFi BD"
+
+  description           String          @db.Text
+  requiredSkills        String[]        @default([])
+  preferredSkills       String[]        @default([])
+  cryptoKnowledge       String[]        @default([])
+  experienceLevel       String?
+
+  embedding             Unsupported("vector(1536)")?
+
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  @@index([archetypeName])
+}
+
+// ===========================================
+// Scoring for Submissions
+// ===========================================
+
+model CandidateScoring {
+  id                    String              @id @default(cuid())
+  submissionId          String              @unique
+  submission            CandidateSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  // Crypto native score
+  cryptoNativeScore     Int?                // 0-100
+  cryptoScoreRationale  String?             @db.Text
+  cryptoScoreConfidence Float?
+
+  // Tech scores
+  techScores            Json?               // { skill: score, ... }
+  techOverallScore      Int?
+
+  // Role fit
+  roleFitScore          Int?                // 0-100
+  roleFitRationale      String?             @db.Text
+
+  // Fraud indicators
+  fraudFlags            Json?
+  fraudScore            Float?
+
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+}
+
+// ===========================================
+// Payments & Commissions
+// ===========================================
+
+enum CommissionStatus {
+  PENDING_HIRE          // Candidate submitted, not hired yet
+  PENDING_START         // Hired but not started
+  PENDING_PAYMENT       // Started, waiting for company payment
+  PAYMENT_SCHEDULED     // Payment scheduled (start + 14 days)
+  PAYMENT_COLLECTED     // Company payment collected
+  PAYOUT_PENDING        // Ready for recruiter payout
+  PAYOUT_PROCESSING     // Payout initiated
+  PAYOUT_COMPLETED      // Recruiter paid
+  CANCELLED             // Hire fell through
+  DISPUTED              // Under dispute
+}
+
+model Commission {
+  id                    String          @id @default(cuid())
+  submissionId          String          @unique
+  submission            CandidateSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  recruiterId           String
+  recruiter             RecruiterProfile @relation(fields: [recruiterId], references: [id], onDelete: Cascade)
+
+  status                CommissionStatus @default(PENDING_HIRE)
+
+  // Amounts
+  grossAmount           Float           // Total commission before take rate
+  platformFee           Float           // Platform take
+  netAmount             Float           // Amount to recruiter
+  currency              String          @default("USD")
+
+  // Take rate applied
+  takeRateApplied       Float           // The actual take rate used
+
+  // Payment tracking
+  paymentDueDate        DateTime?       // start_date + 14 days
+  paymentCollectedAt    DateTime?
+  payoutInitiatedAt     DateTime?
+  payoutCompletedAt     DateTime?
+
+  // Stripe
+  stripePaymentIntentId String?
+  stripeTransferId      String?
+
+  // Idempotency
+  idempotencyKey        String          @unique @default(cuid())
+
+  // State machine transitions
+  statusHistory         Json?
+
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  @@index([recruiterId])
+  @@index([status])
+  @@index([paymentDueDate])
+}
+
+model Invoice {
+  id                    String          @id @default(cuid())
+  companyId             String
+  company               Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  stripeInvoiceId       String?         @unique
+  amount                Float
+  currency              String          @default("USD")
+  status                String          // draft, open, paid, void, uncollectible
+  dueDate               DateTime?
+  paidAt                DateTime?
+
+  // Line items description
+  description           String?         @db.Text
+  metadata              Json?
+
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  @@index([companyId])
+  @@index([status])
+}
+
+// ===========================================
+// Platform Configuration
+// ===========================================
+
+model PlatformConfig {
+  id                    String          @id @default(cuid())
+  key                   String          @unique
+  value                 String
+  description           String?
+  updatedAt             DateTime        @updatedAt
+  updatedBy             String?
+}
+
+// ===========================================
+// Admin Actions
+// ===========================================
+
+model AdminAction {
+  id                    String          @id @default(cuid())
+  adminId               String
+  admin                 User            @relation(fields: [adminId], references: [id])
+
+  action                String          // e.g., "approve_recruiter", "reject_recruiter"
+  targetType            String          // e.g., "RecruiterProfile", "Role"
+  targetId              String
+
+  reason                String?         @db.Text
+  metadata              Json?
+
+  createdAt             DateTime        @default(now())
+
+  @@index([adminId])
+  @@index([targetType, targetId])
+}
+
+// ===========================================
+// Audit Logs
+// ===========================================
+
+model AuditLog {
+  id                    String          @id @default(cuid())
+  userId                String?
+  user                  User?           @relation(fields: [userId], references: [id])
+
+  action                String
+  entityType            String
+  entityId              String
+
+  oldValue              Json?
+  newValue              Json?
+
+  ipAddress             String?
+  userAgent             String?
+
+  createdAt             DateTime        @default(now())
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+// ===========================================
+// Dev Mode: Email Logs
+// ===========================================
+
+model DevEmail {
+  id                    String          @id @default(cuid())
+  to                    String
+  from                  String
+  subject               String
+  htmlBody              String          @db.Text
+  textBody              String?         @db.Text
+  createdAt             DateTime        @default(now())
+
+  @@index([to])
+  @@index([createdAt])
+}
+
+// ===========================================
+// Hidden Talent Matches (Recommender)
+// ===========================================
+
+model HiddenTalentMatch {
+  id                    String          @id @default(cuid())
+  roleId                String
+
+  // Can be either a submission candidate or community candidate
+  submissionId          String?
+  candidateProfileId    String?
+
+  matchScore            Float           // 0-1
+  matchReasons          Json            // Array of reasons
+
+  // Status
+  viewedByAdmin         Boolean         @default(false)
+  viewedAt              DateTime?
+  actionTaken           String?         // "contacted", "ignored", "added_to_pipeline"
+
+  createdAt             DateTime        @default(now())
+
+  @@unique([roleId, submissionId])
+  @@unique([roleId, candidateProfileId])
+  @@index([roleId])
+}
