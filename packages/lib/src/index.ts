@@ -12,12 +12,14 @@ export * from "./services/scoring";
 export * from "./services/recommender";
 export * from "./services/verification";
 export * from "./services/github";
+export * from "./services/evaluation";
 
 // Queue
 export * from "./queue";
 
 // Schemas
 export * from "./schemas";
+export * from "./schemas/evaluation";
 
 // Utils
 export * from "./utils";
