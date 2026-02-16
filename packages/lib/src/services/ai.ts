@@ -158,6 +158,48 @@ class MockAIProvider implements AIProvider {
           "Team culture fit interview",
         ],
       };
+    } else if (prompt.includes("Evaluate this candidate for the target role") || prompt.includes("SCORING RUBRIC (score each category)")) {
+      // Candidate evaluation for sourcing
+      const candidateIdMatch = prompt.match(/CANDIDATE \(ID: ([^)]+)\)/);
+      const candidateId = candidateIdMatch?.[1] || "unknown";
+      const hasDealbreaker = prompt.includes("dealbreakersFound") && prompt.includes("no agency") && prompt.toLowerCase().includes("agency");
+      const baseScore = 55 + Math.floor(simpleHash(candidateId) % 30);
+      mockData = {
+        totalScore: baseScore,
+        confidence: "Med" as const,
+        coreMustHavesFit: { score: Math.floor(baseScore * 0.4), justification: "Mock: Partial skill match based on provided profile text." },
+        relevantScopeSeniority: { score: Math.floor(baseScore * 0.12), justification: "Mock: Seniority appears to be in range." },
+        domainIndustryRelevance: { score: Math.floor(baseScore * 0.08), justification: "Mock: Some domain overlap detected." },
+        evidenceImpactMetrics: { score: Math.floor(baseScore * 0.07), justification: "Mock: Limited quantified achievements in profile." },
+        stabilityTrajectory: { score: Math.floor(baseScore * 0.08), justification: "Mock: Stable career trajectory inferred." },
+        locationWorkModelAlignment: { score: Math.floor(baseScore * 0.05), justification: "Mock: Location compatibility unknown." },
+        bonusSignals: { score: Math.floor(baseScore * 0.06), justification: "Mock: No standout bonus signals detected." },
+        hookLines: [
+          "Relevant background that aligns with core requirements",
+          "Appears to have hands-on experience in the target domain",
+        ],
+        concerns: [
+          "Limited publicly available detail to fully validate experience",
+          "Seniority level needs verification",
+        ],
+        suggestedAngle: "Reference their domain experience and the team's mission.",
+        extractedFacts: {
+          currentRole: "Unknown",
+          yearsExperience: "Unknown",
+          relevantSkills: ["inferred from profile"],
+          notableAchievements: [],
+          location: "Unknown",
+        },
+        dealbreakersFound: hasDealbreaker ? ["Agency background detected"] : [],
+      };
+    } else if (prompt.includes("personalized LinkedIn-style outreach")) {
+      // Outreach draft generation
+      mockData = {
+        shortDraft1: "Hi — your background caught my eye for a role that aligns well with your experience. Would you be open to a quick chat this week?",
+        mediumDraft1: "Hi there, I came across your profile and was impressed by your experience. We have an exciting opportunity that seems like a strong fit for your background. The team is solving challenging problems in this space and I think you'd find the mission compelling. Would you be open to a brief conversation to learn more?",
+        shortDraft2: "Hey — saw your profile and thought of a role that could be a great next step. Happy to share details if you're curious.",
+        mediumDraft2: "Hello, I noticed your profile and wanted to reach out about a role I think you'd find interesting. Based on what I can see of your background, there's strong alignment with what this team is building. No pressure at all — just thought it was worth flagging. Would you be open to connecting for a few minutes?",
+      };
     } else if (prompt.includes("screening questions")) {
       mockData = {
         questions: [

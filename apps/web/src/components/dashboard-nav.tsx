@@ -33,6 +33,7 @@ export function DashboardNav({ user }: DashboardNavProps) {
         return [
           { href: "/dashboard", label: "Overview" },
           { href: "/recruiter/marketplace", label: "Marketplace" },
+          { href: "/recruiter/evaluate", label: "Evaluate" },
           { href: "/recruiter/submissions", label: "Submissions" },
           { href: "/recruiter/commissions", label: "Commissions" },
           { href: "/recruiter/profile", label: "Profile" },
