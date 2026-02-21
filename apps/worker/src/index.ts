@@ -1,7 +1,6 @@
 import { Worker, Job } from "bullmq";
 import IORedis from "ioredis";
 import {
-  QUEUE_NAMES,
   AssessmentJobData,
   PaymentJobData,
   EmailJobData,
@@ -23,6 +22,7 @@ import {
   env,
   isDevMode,
 } from "@techchain/lib";
+import { QUEUE_NAMES } from "@techchain/lib/src/queue";
 import { prisma } from "@techchain/db";
 
 console.log("🚀 Starting TechChain Worker...");

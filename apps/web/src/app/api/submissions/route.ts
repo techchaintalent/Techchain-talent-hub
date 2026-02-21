@@ -6,9 +6,9 @@ import {
   hasPermission,
   canAccessRole,
   SubmissionSchema,
-  queueAssessment,
   generateCandidateSummary,
 } from "@techchain/lib";
+import { queueAssessment } from "@techchain/lib/src/queue";
 
 // GET /api/submissions - List submissions
 export async function GET(request: NextRequest) {

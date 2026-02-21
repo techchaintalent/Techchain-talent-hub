@@ -1,7 +1,8 @@
 import { NextRequest } from "next/server";
 import { prisma, AssessmentRunStatus } from "@techchain/db";
 import { requireAuth, handleApiError, success, ApiError } from "@/lib/api";
-import { runCandidateAssessment, queueAssessment } from "@techchain/lib";
+import { runCandidateAssessment } from "@techchain/lib";
+import { queueAssessment } from "@techchain/lib/src/queue";
 
 // GET /api/candidates/assessments - Get assessment history
 export async function GET(request: NextRequest) {

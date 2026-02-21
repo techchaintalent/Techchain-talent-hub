@@ -13,9 +13,6 @@ export * from "./services/recommender";
 export * from "./services/verification";
 export * from "./services/github";
 
-// Queue
-export * from "./queue";
-
 // Schemas
 export * from "./schemas";
 

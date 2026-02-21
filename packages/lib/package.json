@@ -15,6 +15,7 @@
     "bullmq": "^5.7.0",
     "ioredis": "^5.4.0",
     "next-auth": "^4.24.0",
+    "nodemailer": "^7.0.13",
     "openai": "^4.47.0",
     "resend": "^3.2.0",
     "stripe": "^15.5.0",

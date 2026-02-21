@@ -5,8 +5,8 @@ import {
   CandidateProfileSchema,
   CandidateConsentSchema,
   calculateProfileCompleteness,
-  queueAssessment,
 } from "@techchain/lib";
+import { queueAssessment } from "@techchain/lib/src/queue";
 
 // GET /api/candidates/profile - Get current user's candidate profile
 export async function GET(request: NextRequest) {

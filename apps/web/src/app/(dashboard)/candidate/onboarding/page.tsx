@@ -29,7 +29,7 @@ import {
   EXPERIENCE_LEVELS,
   AVAILABILITY_OPTIONS,
   REMOTE_PREFERENCES,
-} from "@techchain/lib";
+} from "@techchain/lib/src/schemas";
 
 const STEPS = ["Profile", "Career", "Links", "Consent"];
 

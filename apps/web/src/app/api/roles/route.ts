@@ -125,9 +125,6 @@ export async function POST(request: NextRequest) {
         ...data,
         companyId: membership.companyId,
         status: RoleStatus.DRAFT,
-        screeningQuestions: data.screeningQuestions
-          ? JSON.stringify(data.screeningQuestions)
-          : null,
       },
       include: {
         company: {

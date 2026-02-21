@@ -1,7 +1,8 @@
 import { NextRequest } from "next/server";
 import { prisma, RoleStatus, UserRole } from "@techchain/db";
 import { requireAuth, handleApiError, success, ApiError } from "@/lib/api";
-import { hasPermission, isApprovedRecruiter, canAccessRole, queueRecommender } from "@techchain/lib";
+import { hasPermission, isApprovedRecruiter, canAccessRole } from "@techchain/lib";
+import { queueRecommender } from "@techchain/lib/src/queue";
 
 // GET /api/roles/[id] - Get role details
 export async function GET(
